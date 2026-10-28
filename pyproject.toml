@@ -1,0 +1,10 @@
+[project]
+name = "support-agent-evals"
+version = "0.1.0"
+description = "A support agent that looked perfect in the demo, and the eval suite that proved it wasn't."
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=2.3.0",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
