@@ -1,8 +1,28 @@
 # My AI agent looked perfect. Then I ran evals on it.
 
-A customer support agent for a made-up kitchenware shop (Kettleworks), and the eval suite that found what the demo couldn't. Claude Opus 5.5 with four tools, 24 cases written from the shop's policy, code checks that grade what actually happened in the store, every case run k times (pass^k), an LLM judge for what code can't check, and a calibration script that grades the judge against my own labels.
+A customer support agent for a made-up kitchenware shop (Kettleworks), and the eval engine (about 300 lines, built step by step) that found what the demo couldn't. Claude Opus 5.5 with four tools, 24 cases written from the shop's policy, code checks that grade what actually happened in the store, every case run k times (pass^k), an LLM judge for what code can't check, and a calibration script that grades the judge against my own labels.
 
 Video: [link]
+
+## Build it step by step (the video)
+
+Every step of the video is a git tag. Check out `step-0` and build along, or jump to any step.
+
+| Tag | What you have |
+|---|---|
+| `step-0` | the agent under test: `store.py` (fake shop + ledger), `agent.py`, `prompts/v1.md`. No evals yet |
+| `step-1` | 3 cases, one code check (`check_refund`), a 12-line runner |
+| `step-2` | all 24 cases, every code check, `--show-failures`. Finds the 59-day refund |
+| `step-3` | `--trials`, pass@1 and pass^k per tag, a thread pool |
+| `step-4` | the LLM judge (`--judge`). It fails good replies: it was never shown the policy |
+| `step-5` | the policy and today's date in the judge, `label.py`, `calibrate.py` |
+| `step-6` | `prompts/v2.md` and `--guard`: the refund rules inside `issue_refund` |
+
+```bash
+git checkout step-3            # jump to a step
+git diff step-2 step-3         # exactly what that step added
+git checkout main              # the finished engine
+```
 
 ## Run it
 
@@ -11,15 +31,16 @@ git clone https://github.com/pdichone/support-agent-evals && cd support-agent-ev
 uv venv && source .venv/bin/activate && uv pip install -r pyproject.toml
 cp .env.example .env    # ANTHROPIC_API_KEY
 
-python run_evals.py --demo --trials 1        # the five questions I tried by hand
-python run_evals.py --prompt v1 --trials 5   # all 24 cases, 5 trials each: pass@1 and pass^5
+python agent.py "My kettle (K-1001) arrived cracked" --as maya@example.com   # one conversation
+python run_evals.py --demo                   # the five questions I tried by hand
+python run_evals.py --show-failures          # all 24 cases once, with the transcript of every failure
+python run_evals.py --trials 5               # pass@1 and pass^5
 python label.py                              # label 40 replies by hand, blind
 python calibrate.py                          # grade two judges against your labels
 python run_evals.py --prompt v2 --guard --trials 5 --judge claude-haiku-5-5
-python agent.py "I was charged twice for K-1005" --as sam@example.com   # one conversation
 ```
 
-A 5-trial pass over all 24 cases is 120 agent runs, about $3 on Opus 5.5. `calibrate.py` with two judges on 40 labels is well under $1.
+A 5-trial pass over all 24 cases is 120 agent runs, about $3 on Opus 5.5. A Haiku 5.5 judge adds about a cent. `calibrate.py` with two judges on 40 labels is well under $1.
 
 ## Files
 
@@ -31,9 +52,9 @@ A 5-trial pass over all 24 cases is 120 agent runs, about $3 on Opus 5.5. `calib
 | `cases.yaml` | 24 cases, each with what must be true at the end (refund, escalation, what the reply must or must never say) |
 | `checks.py` | code graders: the ledger, the tickets, "said = did", leaks |
 | `judge.py` | the LLM judge: binary, critique first, structured output |
-| `run_evals.py` | runs cases × trials in parallel, grades them, writes `results/<config>.json` with pass@1, pass^k and every failure |
+| `run_evals.py` | runs cases × trials in parallel, grades them, prints pass@1 / pass^k per tag and every failure, saves trials to `results/` |
 | `label.py` | blind human labeling on the judge's rubric → `results/labels.jsonl` |
-| `calibrate.py` | each judge vs your labels: agreement, catches failures, passes good ones, Cohen's kappa, $ |
+| `calibrate.py` | each judge vs your labels: agreement, catches failures, passes good ones, $, and every disagreement |
 
 ## What the checks grade
 
