@@ -50,6 +50,7 @@ class Store:
         self.refunds: list[dict] = []   # what really got refunded
         self.tickets: list[dict] = []   # what really got escalated
         self.calls: list[dict] = []     # every tool call: name, args, result
+        self.guarded = False            # v2 turns on the policy checks inside issue_refund
 
     def _log(self, name: str, args: dict, result) -> str:
         out = result if isinstance(result, str) else json.dumps(result)
@@ -69,6 +70,13 @@ class Store:
         o = self.orders.get(order_id.strip().upper())
         if not o:
             return self._log("issue_refund", args, {"error": "no such order"})
+        if self.guarded:  # the rules live in code, not only in the prompt
+            if amount > 150:
+                return self._log("issue_refund", args, {"error": "over the $150 limit: escalate to returns"})
+            if o["status"] != "delivered" or (TODAY - date.fromisoformat(o["delivered"])).days > 30:
+                return self._log("issue_refund", args, {"error": "not refundable: in transit or past 30 days"})
+            if amount > o["total"]:
+                return self._log("issue_refund", args, {"error": "more than the order total"})
         self.refunds.append({"order_id": order_id.strip().upper(), "amount": float(amount)})
         return self._log("issue_refund", args, {"ok": True, "refund_id": f"R-{len(self.refunds):03d}"})
 

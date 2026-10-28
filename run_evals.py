@@ -4,7 +4,7 @@
     python run_evals.py                          # all 24 cases, one trial
     python run_evals.py --show-failures          # ...and print the transcript of every failure
     python run_evals.py --trials 5               # pass@1 and pass^5
-    python run_evals.py --trials 5 --judge claude-haiku-5-5
+    python run_evals.py --prompt v2 --guard --trials 5 --judge claude-haiku-5-5
 """
 
 import argparse
@@ -23,9 +23,9 @@ from judge import judge
 CASES = yaml.safe_load(Path("cases.yaml").read_text())
 
 
-def run_trial(case: dict, judge_model: str | None) -> dict:
+def run_trial(case: dict, prompt: str, guard: bool, judge_model: str | None) -> dict:
     try:
-        t = agent.run(case["message"], case["as"], case_id=case["id"]).to_dict()
+        t = agent.run(case["message"], case["as"], prompt, guard, case["id"]).to_dict()
     except Exception as e:  # a crashed trial is a failed trial
         return {"case_id": case["id"], "tag": case["tag"], "checks": [["crashed", False, repr(e)]],
                 "code_pass": False, "passed": False, "cost": 0.0, "calls": [], "reply": ""}
@@ -46,6 +46,8 @@ def pass_hat_k(c: int, n: int, k: int) -> float:
 
 def main() -> None:
     p = argparse.ArgumentParser()
+    p.add_argument("--prompt", default="v1", choices=["v1", "v2"])
+    p.add_argument("--guard", action="store_true", help="enforce the refund rules inside issue_refund")
     p.add_argument("--trials", type=int, default=1)
     p.add_argument("--demo", action="store_true", help="only the five cases I tried by hand")
     p.add_argument("--judge", help="also grade every reply with an LLM judge, e.g. claude-haiku-5-5")
@@ -55,7 +57,7 @@ def main() -> None:
     cases = [c for c in CASES if c.get("demo") or not a.demo]
     jobs = [c for c in cases for _ in range(a.trials)]
     with ThreadPoolExecutor(8) as pool:  # 24 cases × 5 trials is 120 agent runs: run 8 at a time
-        trials = list(pool.map(lambda c: run_trial(c, a.judge), jobs))
+        trials = list(pool.map(lambda c: run_trial(c, a.prompt, a.guard, a.judge), jobs))
 
     # pass@1 and pass^k, per tag and overall
     results = defaultdict(list)  # case_id -> [True, False, ...]
@@ -86,7 +88,7 @@ def main() -> None:
                     print(f"    → {c['tool']}({json.dumps(c['args'])})")
                 print("    " + t["reply"].replace("\n", "\n    ") + "\n")
 
-    config = "v1" + ("-demo" if a.demo else "")
+    config = a.prompt + ("+guard" if a.guard else "") + ("-demo" if a.demo else "")
     Path("results").mkdir(exist_ok=True)
     with open(f"results/runs-{config}.jsonl", "w") as f:
         f.writelines(json.dumps(t) + "\n" for t in trials)

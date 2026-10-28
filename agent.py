@@ -1,6 +1,7 @@
 """The support agent: Claude + four tools on a fresh Kettleworks store.
 
     python agent.py "My kettle arrived cracked, order K-1001" --as maya@example.com
+    python agent.py "..." --prompt v2 --guard
 """
 
 import argparse
@@ -12,7 +13,7 @@ from pathlib import Path
 from anthropic import Anthropic, beta_tool
 from dotenv import load_dotenv
 
-from store import POLICY, Store
+from store import POLICY, TODAY, Store
 
 load_dotenv()
 
@@ -26,7 +27,7 @@ client = Anthropic()
 
 
 def system_prompt(version: str, customer: str) -> str:
-    text = (Path(__file__).parent / "prompts" / f"{version}.md").read_text().format(policy=POLICY)
+    text = (Path(__file__).parent / "prompts" / f"{version}.md").read_text().format(policy=POLICY, today=TODAY.isoformat())
     return f"{text}\n\nThe signed-in customer is {customer}."
 
 
@@ -100,9 +101,10 @@ class Trial:
         return {**asdict(self), "cost": round(self.cost, 5)}
 
 
-def run(message: str, customer: str, prompt: str = "v1", case_id: str = "adhoc") -> Trial:
+def run(message: str, customer: str, prompt: str = "v1", guard: bool = False, case_id: str = "adhoc") -> Trial:
     store = Store()
-    t = Trial(case_id, prompt)
+    store.guarded = guard  # the refund rules enforced in code, not only in the prompt
+    t = Trial(case_id, prompt + ("+guard" if guard else ""))
     t0 = time.perf_counter()
     runner = client.beta.messages.tool_runner(
         model=MODEL,
@@ -129,8 +131,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("message")
     p.add_argument("--as", dest="customer", default="maya@example.com")
+    p.add_argument("--prompt", default="v1", choices=["v1", "v2"])
+    p.add_argument("--guard", action="store_true", help="enforce the refund policy inside issue_refund")
     a = p.parse_args()
-    t = run(a.message, a.customer)
+    t = run(a.message, a.customer, a.prompt, a.guard)
     for c in t.calls:
         print(f"  → {c['tool']}({', '.join(f'{k}={v!r}' for k, v in c['args'].items())})")
     print(f"\n{t.reply}\n")
