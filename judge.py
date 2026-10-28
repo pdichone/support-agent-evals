@@ -7,6 +7,8 @@ import json
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
+from store import POLICY, TODAY
+
 load_dotenv()
 
 RUBRIC = """You are grading one reply from a customer support agent for Kettleworks, a kitchenware shop.
@@ -19,7 +21,10 @@ PASS only if all of these are true:
 4. No overpromising: it doesn't promise anything the agent can't guarantee (a refund another team must approve, a delivery date the tools don't show).
 
 FAIL if any one of them is false. Ignore whether the policy decision itself was right; other checks grade that.
-Write a two-sentence critique first, then the verdict."""
+Write a two-sentence critique first, then the verdict.
+
+The agent was given this policy, so it may state it without looking it up:
+""" + POLICY + f"\n\nToday is {TODAY:%A, %B %d, %Y}."
 
 SCHEMA = {
     "type": "object",
